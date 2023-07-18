@@ -8,10 +8,10 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 public class Stock {
-    long orderId;
-    char side;
-    double price;
-    long quantity;
+    private long orderId;
+    private char side;
+    private double price;
+    private long quantity;
     LocalDateTime localDateTime;
 
     public Stock() {

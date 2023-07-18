@@ -4,22 +4,38 @@ import com.limitorders.verifier.entity.Stock;
 import com.limitorders.verifier.entity.Trade;
 import javafx.util.Pair;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.PriorityQueue;
 
 public class LimitOrderProcessor {
     private static final double EPSILON = 1e-6;
-    // available buy price is greater than the max sell price then it will be executed.
-    // if sell orders are of higher price than anyone is ready to buy at then it will wait.
 
-    // OrderId, Type, quantity, price.
-    // if the price is same, then the orders should be executed based on the time of arrival,
-    // PriorityQueue<
-    // max priority queue for buy orders as we
-    // min priority queue for sell orders.
+    private PriorityQueue<Stock> buyLimitOrders;
+    private PriorityQueue<Stock> sellLimitOrders;
+    private List<Trade> tradeList;
 
-    public PriorityQueue<Stock> buyLimitOrders;
-    public PriorityQueue<Stock> sellLimitOrders;
+    public LimitOrderProcessor() {
+         buyLimitOrders = new PriorityQueue<>((a, b) -> {
+            if (b.getPrice() == (a.getPrice())) {
+                return a.getLocalDateTime().compareTo(b.getLocalDateTime());
+            } else {
+                return Double.compare(b.getPrice(), a.getPrice());
+            }
+        }
+        );
+
+        sellLimitOrders = new PriorityQueue<>((a, b) -> {
+            if (Math.abs(a.getPrice() - b.getPrice()) < EPSILON) {
+                return a.getLocalDateTime().compareTo(b.getLocalDateTime());
+            } else {
+                return Double.compare(a.getPrice(), b.getPrice());
+            }
+        });
+
+        tradeList = new ArrayList<>();
+    }
 
     public LimitOrderProcessor(PriorityQueue<Stock>buyLimitOrders, PriorityQueue<Stock>sellLimitOrders) {
         this.buyLimitOrders = buyLimitOrders;
@@ -41,57 +57,82 @@ public class LimitOrderProcessor {
         }
     }
 
-    public void findTradedOrders() {
+    private void processBuyOrders(Stock currentLimitOrder) {
+        while (sellLimitOrders.size() > 0 && (currentLimitOrder.getPrice() >= sellLimitOrders.peek().getPrice())) {
 
-        PriorityQueue<Pair<Integer, Trade>> tradedList = new PriorityQueue<>(Comparator.comparingInt(Pair::getKey));
-        int count = 0;
-        while (buyLimitOrders.size() > 0 && sellLimitOrders.size() > 0 && (buyLimitOrders.peek().getPrice() >= sellLimitOrders.peek().getPrice())) {
-
-            Stock buyLimitOrder = buyLimitOrders.poll();
             Stock sellLimitOrder = sellLimitOrders.poll();
-            long aggressingOrderId = 0;
-            long restingOrderId = 0;
-            if (buyLimitOrder.getLocalDateTime().isAfter(sellLimitOrder.getLocalDateTime())) {
-                aggressingOrderId = buyLimitOrder.getOrderId();
-                restingOrderId = sellLimitOrder.getOrderId();
-            } else {
-                aggressingOrderId = sellLimitOrder.getOrderId();
-                restingOrderId = buyLimitOrder.getOrderId();
-            }
-            long remainingQuantity = sellLimitOrder.getQuantity() - buyLimitOrder.getQuantity();
+            long aggressingOrderId = currentLimitOrder.getOrderId();
+            long restingOrderId = sellLimitOrder.getOrderId();
+
+            long remainingQuantity = sellLimitOrder.getQuantity() - currentLimitOrder.getQuantity();
 
             if (remainingQuantity > 0) {
 
-
-                sellLimitOrders.add(sellLimitOrder);
-                Trade trade = new Trade(aggressingOrderId, restingOrderId, sellLimitOrder.getPrice(), buyLimitOrder.getQuantity());
-                tradedList.add(new Pair<>(count++, trade));
+                Trade trade = new Trade(aggressingOrderId, restingOrderId, sellLimitOrder.getPrice(), currentLimitOrder.getQuantity());
+                tradeList.add(trade);
                 sellLimitOrder.setQuantity(remainingQuantity);
+                sellLimitOrders.add(sellLimitOrder);
+                break;
 
-            } else if (remainingQuantity < 0) {
-                buyLimitOrders.add(buyLimitOrder);
+            } else{
+                currentLimitOrder.setQuantity(-1*remainingQuantity);
                 Trade trade = new Trade(aggressingOrderId, restingOrderId, sellLimitOrder.getPrice(), sellLimitOrder.getQuantity());
-                tradedList.add(new Pair<>(count++, trade));
-                buyLimitOrder.setQuantity(-1 * remainingQuantity);
-            } else {
-                Trade trade = new Trade(aggressingOrderId, restingOrderId, sellLimitOrder.getPrice(), sellLimitOrder.getQuantity());
-                tradedList.add(new Pair<>(count++, trade));
+                tradeList.add( trade);
             }
-
         }
 
-        // print the output
-
-        while (!tradedList.isEmpty()) {
-            System.out.println("traded " + tradedList.peek().getValue().getAggressingOrderId() + " "
-                    + tradedList.peek().getValue().getRestingOrderId() + " "
-                    + tradedList.peek().getValue().getPrice() + " " +
-                    tradedList.peek().getValue().getQuantity());
-            tradedList.poll();
+        if(currentLimitOrder.getQuantity() > 0) {
+            buyLimitOrders.add(currentLimitOrder);
         }
-
     }
 
+    private void processSellOrders(Stock currentLimitOrder) {
+        while (buyLimitOrders.size() > 0 && (currentLimitOrder.getPrice() <= buyLimitOrders.peek().getPrice())) {
+
+            Stock buyLimitOrder = buyLimitOrders.poll();
+            long aggressingOrderId = currentLimitOrder.getOrderId();
+            long restingOrderId = buyLimitOrder.getOrderId();
+
+            long remainingQuantity = buyLimitOrder.getQuantity() - currentLimitOrder.getQuantity();
+
+            if (remainingQuantity > 0) {
+
+                Trade trade = new Trade(aggressingOrderId, restingOrderId, currentLimitOrder.getPrice(), currentLimitOrder.getQuantity());
+                tradeList.add(trade);
+                buyLimitOrder.setQuantity(remainingQuantity);
+                buyLimitOrders.add(buyLimitOrder);
+                break;
+
+            } else{
+                currentLimitOrder.setQuantity(-1*remainingQuantity);
+                Trade trade = new Trade(aggressingOrderId, restingOrderId, currentLimitOrder.getPrice(), buyLimitOrder.getQuantity());
+                tradeList.add( trade);
+            }
+        }
+
+        if(currentLimitOrder.getQuantity() > 0) {
+            sellLimitOrders.add(currentLimitOrder);
+        }
+    }
+
+    public void findTradedOrders(Stock currentLimitOrder) {
+
+        if (currentLimitOrder.getSide() == 'B') {
+            processBuyOrders(currentLimitOrder);
+        } else if (currentLimitOrder.getSide() == 'S') {
+            processSellOrders(currentLimitOrder);
+        }
+    }
+
+    public void printTradedOrders() {
+        // print the output
+        for (Trade trade : tradeList) {
+            System.out.println("traded " + trade.getAggressingOrderId() + " "
+                    + trade.getRestingOrderId() + " "
+                    + trade.getPrice() + " " +
+                    trade.getQuantity());
+        }
+    }
 
     //limitOrderProcessorPriorityQueue
 

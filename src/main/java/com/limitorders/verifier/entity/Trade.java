@@ -6,10 +6,10 @@ import lombok.Setter;
 @Getter
 @Setter
 public class Trade {
-    public long aggressingOrderId;
-    public long restingOrderId;
-    public double price;
-    public long quantity;
+    private long aggressingOrderId;
+    private long restingOrderId;
+    private double price;
+    private long quantity;
 
     public Trade(long aggressingOrderId, long restingOrderId, double price, long quantity) {
         this.aggressingOrderId = aggressingOrderId;
